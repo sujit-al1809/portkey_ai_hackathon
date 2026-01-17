@@ -1,6 +1,7 @@
 """
 Dashboard API Server
 Serves optimization data to the Next.js dashboard
+Integrates the Multi-Agent Orchestration System
 """
 
 from flask import Flask, jsonify, request
@@ -19,12 +20,41 @@ from database import (
 from observability import (
     get_system_health, metrics, api_logger, replay_logger
 )
+from orchestrator import CostQualityOrchestrator
+from user_metadata import user_service
+from cache_manager import cache_manager
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for Next.js frontend
 
 # Initialize database
 init_db()
+
+# Initialize global components
+_replay_engine = None
+_quality_evaluator = None
+_orchestrator = None
+
+
+def get_replay_engine():
+    global _replay_engine
+    if _replay_engine is None:
+        _replay_engine = ReplayEngine()
+    return _replay_engine
+
+
+def get_quality_evaluator():
+    global _quality_evaluator
+    if _quality_evaluator is None:
+        _quality_evaluator = QualityEvaluator()
+    return _quality_evaluator
+
+
+def get_orchestrator():
+    global _orchestrator
+    if _orchestrator is None:
+        _orchestrator = CostQualityOrchestrator(get_replay_engine(), get_quality_evaluator())
+    return _orchestrator
 
 
 @app.route('/health')
@@ -45,6 +75,136 @@ def get_metrics():
 def get_system_stats():
     """Get detailed system statistics"""
     return jsonify(metrics.get_metrics())
+
+
+@app.route('/api/optimize', methods=['POST'])
+def run_optimization():
+    """
+    Run the multi-agent cost-quality optimization pipeline
+    
+    Request body:
+    {
+        "user_id": "optional_user_id",  // defaults to "default"
+        "k_candidates": 6,               // number of candidates to discover
+        "n_top": 3                       // number of top candidates to verify
+    }
+    
+    Returns business-readable recommendation:
+    "Switching from Model A to Model B reduces cost by 42% with a 6% quality impact."
+    """
+    try:
+        data = request.get_json() or {}
+        user_id = data.get('user_id', 'default')
+        k_candidates = data.get('k_candidates', 6)
+        n_top = data.get('n_top', 3)
+        
+        api_logger.log_event('optimize_request', {'user_id': user_id})
+        
+        # Run the orchestrator
+        orchestrator = get_orchestrator()
+        result = orchestrator.run_optimization(user_id, k_candidates, n_top)
+        
+        # Log the outcome
+        if result.get('status') == 'success':
+            api_logger.log_event('optimization_complete', {
+                'user_id': user_id,
+                'recommended_model': result['recommendation']['recommended_model'],
+                'cost_saving_percent': result['recommendation']['projected_cost_saving_percent']
+            })
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        api_logger.log_event('optimize_error', {'error': str(e)}, level='error')
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@app.route('/api/user/<user_id>', methods=['GET', 'POST'])
+def user_profile(user_id: str):
+    """
+    GET: Retrieve user profile and constraints
+    POST: Update user profile settings
+    """
+    try:
+        if request.method == 'GET':
+            user = user_service.get_or_create_default_user(user_id)
+            return jsonify(user.to_dict())
+        
+        else:  # POST
+            data = request.get_json() or {}
+            user = user_service.get_or_create_default_user(user_id)
+            
+            # Update fields if provided
+            if 'current_model' in data:
+                user.current_model = data['current_model']
+            if 'use_case' in data:
+                user.use_case = data['use_case']
+            if 'constraints' in data:
+                from user_metadata import UserConstraints
+                user.constraints = UserConstraints(**data['constraints'])
+            if 'avg_input_tokens' in data:
+                user.avg_input_tokens = data['avg_input_tokens']
+            if 'avg_output_tokens' in data:
+                user.avg_output_tokens = data['avg_output_tokens']
+            if 'monthly_request_volume' in data:
+                user.monthly_request_volume = data['monthly_request_volume']
+            
+            # Save updated user
+            user_service.save_user(user)
+            
+            # Invalidate cache for this user
+            cache_manager.invalidate_by_prefix(f"user:{user_id}")
+            
+            return jsonify({'status': 'updated', 'user': user.to_dict()})
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/user/<user_id>/conversations', methods=['POST'])
+def add_conversation(user_id: str):
+    """Add a conversation to user's history for verification"""
+    try:
+        data = request.get_json()
+        messages = data.get('messages', [])
+        
+        if not messages:
+            return jsonify({'error': 'No messages provided'}), 400
+        
+        user_service.add_conversation(user_id, messages)
+        
+        return jsonify({'status': 'added', 'message': 'Conversation added to history'})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/cache/stats')
+def cache_stats():
+    """Get cache statistics"""
+    return jsonify(cache_manager.get_stats())
+
+
+@app.route('/api/cache/invalidate', methods=['POST'])
+def invalidate_cache():
+    """Invalidate cache entries"""
+    try:
+        data = request.get_json() or {}
+        
+        if 'key' in data:
+            success = cache_manager.invalidate(data['key'])
+            return jsonify({'status': 'invalidated' if success else 'not_found'})
+        
+        if 'prefix' in data:
+            count = cache_manager.invalidate_by_prefix(data['prefix'])
+            return jsonify({'status': 'invalidated', 'count': count})
+        
+        return jsonify({'error': 'Provide key or prefix to invalidate'}), 400
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/dashboard-data')
 def get_dashboard_data_api():
@@ -356,9 +516,34 @@ def get_recommendation_reasoning(use_case: str, recommended_model: str, evaluati
 
 
 if __name__ == '__main__':
-    print("Starting Dashboard API on http://localhost:5000")
-    print("Endpoints:")
-    print("  - GET  /api/dashboard-data  (Dashboard data)")
-    print("  - POST /analyze             (Prompt analysis)")
-    print("\nMake sure to run the Next.js dashboard on http://localhost:3000")
+    print("=" * 60)
+    print("  LLM Cost-Quality Optimization API")
+    print("  Multi-Agent Architecture v2.0")
+    print("=" * 60)
+    print("\nServer: http://localhost:5000")
+    print("\nAPI Endpoints:")
+    print("  CORE:")
+    print("    GET  /health                    - System health check")
+    print("    GET  /metrics                   - Prometheus metrics")
+    print("    GET  /api/system-stats          - Detailed statistics")
+    print()
+    print("  MULTI-AGENT ORCHESTRATION:")
+    print("    POST /api/optimize              - Run 3-layer optimization")
+    print("         → Returns: 'Switching from A to B reduces cost by 42%...'")
+    print()
+    print("  USER MANAGEMENT:")
+    print("    GET  /api/user/<id>             - Get user profile")
+    print("    POST /api/user/<id>             - Update user settings")
+    print("    POST /api/user/<id>/conversations - Add conversation history")
+    print()
+    print("  CACHE MANAGEMENT:")
+    print("    GET  /api/cache/stats           - Cache statistics")
+    print("    POST /api/cache/invalidate      - Invalidate cache entries")
+    print()
+    print("  LEGACY:")
+    print("    GET  /api/dashboard-data        - Dashboard summary data")
+    print("    POST /analyze                   - Single prompt analysis")
+    print()
+    print("Frontend: http://localhost:3000")
+    print("=" * 60)
     app.run(debug=True, port=5000)

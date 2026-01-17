@@ -5,7 +5,7 @@ import { TestHeader } from "@/components/test-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Send, AlertCircle, CheckCircle2, TrendingDown, TrendingUp } from "lucide-react"
+import { Loader2, Send, AlertCircle, CheckCircle2, TrendingDown, TrendingUp, Zap, DollarSign, Target } from "lucide-react"
 
 interface ModelResult {
   model_name: string
@@ -26,12 +26,73 @@ interface AnalysisResult {
   timestamp: string
 }
 
+interface OptimizationResult {
+  status: string
+  summary: string
+  recommendation: {
+    current_model: string
+    recommended_model: string
+    recommended_model_display: string
+    projected_cost_saving_percent: number
+    projected_quality_impact_percent: number
+    confidence: number
+    business_impact: {
+      monthly_request_volume: number
+      current_monthly_cost_usd: number
+      projected_monthly_cost_usd: number
+      projected_monthly_savings_usd: number
+      annual_savings_usd: number
+    }
+    reasons: string[]
+    fallback_option?: {
+      model: string
+      cost_saving_percent: number
+      quality_impact_percent: number
+    }
+  }
+  processing_time_seconds: number
+  verification_cost_usd: number
+}
+
 export default function TestPage() {
   const [prompt, setPrompt] = useState("")
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<string>("")
+  
+  // Optimization state
+  const [optimizing, setOptimizing] = useState(false)
+  const [optimizationResult, setOptimizationResult] = useState<OptimizationResult | null>(null)
+  const [optimizationError, setOptimizationError] = useState<string | null>(null)
+
+  const handleOptimize = async () => {
+    setOptimizing(true)
+    setOptimizationError(null)
+    setOptimizationResult(null)
+
+    try {
+      const response = await fetch("http://localhost:5000/api/optimize", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ user_id: "default" }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Optimization failed")
+      }
+
+      const data = await response.json()
+      setOptimizationResult(data)
+    } catch (err) {
+      setOptimizationError("Failed to run optimization. Make sure the backend is running on port 5000.")
+      console.error(err)
+    } finally {
+      setOptimizing(false)
+    }
+  }
 
   const handleAnalyze = async () => {
     if (!prompt.trim()) {
@@ -86,6 +147,146 @@ export default function TestPage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900">
       <TestHeader />
       <div className="container mx-auto px-4 py-8 max-w-7xl">
+
+        {/* Quick Optimization Section - Track 4 Feature */}
+        <Card className="mb-6 shadow-lg border-2 border-purple-200 dark:border-purple-800 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-2xl">
+                  <Zap className="h-6 w-6 text-purple-600" />
+                  Cost-Quality Optimization
+                </CardTitle>
+                <CardDescription className="text-base mt-1">
+                  Multi-agent system analyzes your usage and recommends cost-saving model switches
+                </CardDescription>
+              </div>
+              <Button
+                onClick={handleOptimize}
+                disabled={optimizing}
+                size="lg"
+                className="bg-purple-600 hover:bg-purple-700"
+              >
+                {optimizing ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Optimizing...
+                  </>
+                ) : (
+                  <>
+                    <Target className="mr-2 h-5 w-5" />
+                    Run Optimization
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardHeader>
+          
+          {optimizationError && (
+            <CardContent>
+              <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5" />
+                <p className="text-red-800 dark:text-red-200">{optimizationError}</p>
+              </div>
+            </CardContent>
+          )}
+          
+          {optimizationResult && optimizationResult.status === "success" && (
+            <CardContent className="space-y-4">
+              {/* Summary Banner */}
+              <div className="p-6 bg-gradient-to-r from-green-100 to-emerald-100 dark:from-green-900/40 dark:to-emerald-900/40 rounded-xl border-2 border-green-300 dark:border-green-700">
+                <p className="text-2xl font-bold text-green-800 dark:text-green-200 text-center">
+                  💡 {optimizationResult.summary}
+                </p>
+              </div>
+              
+              {/* Stats Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <TrendingDown className="h-5 w-5 text-green-600" />
+                    <span className="text-sm text-slate-600 dark:text-slate-400">Cost Savings</span>
+                  </div>
+                  <p className="text-3xl font-bold text-green-600">
+                    {optimizationResult.recommendation.projected_cost_saving_percent.toFixed(1)}%
+                  </p>
+                </div>
+                
+                <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <TrendingUp className="h-5 w-5 text-orange-600" />
+                    <span className="text-sm text-slate-600 dark:text-slate-400">Quality Impact</span>
+                  </div>
+                  <p className="text-3xl font-bold text-orange-600">
+                    {Math.abs(optimizationResult.recommendation.projected_quality_impact_percent).toFixed(1)}%
+                  </p>
+                </div>
+                
+                <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <DollarSign className="h-5 w-5 text-blue-600" />
+                    <span className="text-sm text-slate-600 dark:text-slate-400">Monthly Savings</span>
+                  </div>
+                  <p className="text-3xl font-bold text-blue-600">
+                    ${optimizationResult.recommendation.business_impact.projected_monthly_savings_usd.toFixed(2)}
+                  </p>
+                </div>
+                
+                <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border shadow-sm">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CheckCircle2 className="h-5 w-5 text-purple-600" />
+                    <span className="text-sm text-slate-600 dark:text-slate-400">Confidence</span>
+                  </div>
+                  <p className="text-3xl font-bold text-purple-600">
+                    {(optimizationResult.recommendation.confidence * 100).toFixed(0)}%
+                  </p>
+                </div>
+              </div>
+              
+              {/* Model Switch Details */}
+              <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border">
+                <h4 className="font-semibold mb-3">Recommended Switch</h4>
+                <div className="flex items-center gap-4">
+                  <div className="p-3 bg-slate-100 dark:bg-slate-700 rounded-lg">
+                    <p className="text-sm text-slate-500">Current</p>
+                    <p className="font-bold">{optimizationResult.recommendation.current_model}</p>
+                  </div>
+                  <span className="text-2xl">→</span>
+                  <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-lg border-2 border-green-300">
+                    <p className="text-sm text-green-600">Recommended</p>
+                    <p className="font-bold text-green-700 dark:text-green-300">{optimizationResult.recommendation.recommended_model_display}</p>
+                  </div>
+                </div>
+                
+                {optimizationResult.recommendation.fallback_option && (
+                  <div className="mt-3 p-2 bg-slate-50 dark:bg-slate-900 rounded text-sm">
+                    <span className="text-slate-500">Fallback: </span>
+                    <span className="font-medium">{optimizationResult.recommendation.fallback_option.model}</span>
+                    <span className="text-slate-500"> ({optimizationResult.recommendation.fallback_option.cost_saving_percent}% savings)</span>
+                  </div>
+                )}
+              </div>
+              
+              {/* Processing Info */}
+              <div className="text-sm text-slate-500 text-right">
+                Processed in {optimizationResult.processing_time_seconds.toFixed(2)}s | 
+                Verification cost: ${optimizationResult.verification_cost_usd.toFixed(4)}
+              </div>
+            </CardContent>
+          )}
+          
+          {optimizationResult && optimizationResult.status === "no_recommendation" && (
+            <CardContent>
+              <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200">
+                <p className="text-blue-800 dark:text-blue-200">
+                  ✓ Your current model appears to be optimal for your use case and constraints.
+                </p>
+              </div>
+            </CardContent>
+          )}
+        </Card>
+
+        <hr className="my-8 border-slate-300 dark:border-slate-700" />
 
         {/* Input Section */}
         <Card className="mb-6 shadow-lg">
