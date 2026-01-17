@@ -31,30 +31,77 @@ A **production-grade optimization system** that delivers:
 
 ## Architecture
 
+```mermaid
+flowchart TB
+    subgraph Monitor["CONTINUOUS MONITOR"]
+        CM[Runs 24/7 - Fetches prompts - Orchestrates pipeline]
+    end
+    
+    subgraph Layer1["LAYER 1: Candidate Discovery"]
+        MRA[Model Registry Agent]
+        PRA[Pricing Registry Agent]
+        UCA[User Context Agent]
+    end
+    
+    subgraph Layer2["LAYER 2: Use-Case Fit Ranking"]
+        UCF[Use-Case Fit Agent]
+    end
+    
+    subgraph Layer3["LAYER 3: Verification & Evaluation"]
+        RE[Replay Engine]
+        QE[Quality Evaluator<br/>LLM-as-Judge]
+        CO[Cost Optimizer]
+    end
+    
+    subgraph Storage["PERSISTENCE"]
+        DB[(SQLite DB)]
+        Cache[(Cache Manager)]
+    end
+    
+    subgraph UI["DASHBOARD - Next.js"]
+        Stats[Stats & Charts]
+        Compare[Model Comparison]
+        Test[Test Interface]
+    end
+    
+    CM --> Layer1
+    MRA --> UCF
+    PRA --> UCF
+    UCA --> UCF
+    UCF --> Layer3
+    RE --> QE --> CO
+    
+    Layer3 --> DB
+    Layer3 --> Cache
+    DB --> UI
 ```
-+------------------------------------------------------------------+
-|                      CONTINUOUS MONITOR                           |
-|   Runs 24/7 - Fetches prompts - Orchestrates pipeline            |
-+-----------------------------+------------------------------------+
-                              |
-          +-------------------+-------------------+
-          v                   v                   v
-    +-----------+       +-----------+       +-----------+
-    |  REPLAY   |       |  QUALITY  |       |  COST     |
-    |  ENGINE   |------>|  EVALUATOR|------>|  OPTIMIZER|
-    |           |       |(LLM Judge)|       |           |
-    +-----------+       +-----------+       +-----------+
-          |                   |                   |
-          |          +--------+--------+          |
-          +--------->|   SQLite DB     |<---------+
-                     |  + JSON Logs    |
-                     +--------+--------+
-                              |
-                              v
-    +------------------------------------------------------------------+
-    |                    DASHBOARD (Next.js)                            |
-    |    Stats - Charts - Model Comparison - Test Interface            |
-    +------------------------------------------------------------------+
+
+### Data Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant API as Dashboard API
+    participant L1 as Layer 1: Discovery
+    participant L2 as Layer 2: Ranking
+    participant L3 as Layer 3: Verification
+    participant LLM as Portkey Gateway
+    participant DB as SQLite
+    
+    User->>API: POST /api/optimize
+    API->>L1: Discover candidates
+    L1->>DB: Get user context
+    L1->>L1: Find cheaper models
+    L1->>L2: Pass candidates
+    L2->>L2: Score use-case fit
+    L2->>L3: Top N candidates
+    L3->>LLM: Replay prompts
+    LLM-->>L3: Completions
+    L3->>LLM: Quality evaluation
+    LLM-->>L3: Scores
+    L3->>DB: Cache results
+    L3-->>API: Recommendation
+    API-->>User: "Switching from A to B saves 42%..."
 ```
 
 ---
