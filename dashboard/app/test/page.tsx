@@ -1,11 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { TestHeader } from "@/components/test-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Send, AlertCircle, CheckCircle2, TrendingDown, TrendingUp, Zap, DollarSign, Target } from "lucide-react"
+import { Loader2, Send, AlertCircle, CheckCircle2, TrendingDown, TrendingUp, Zap, DollarSign, Target, LogOut, History } from "lucide-react"
 
 interface ModelResult {
   model_name: string
@@ -14,6 +15,7 @@ interface ModelResult {
   latency_ms: number
   response: string
   success: boolean
+  is_cached?: boolean
 }
 
 interface AnalysisResult {
@@ -24,6 +26,18 @@ interface AnalysisResult {
   quality_impact_percent: number
   models: ModelResult[]
   timestamp: string
+  status?: string
+  message?: string
+  cached_from?: string
+  is_cached?: boolean
+}
+
+interface HistoryChat {
+  question: string
+  model: string
+  quality: number
+  cost: number
+  date: string
 }
 
 interface OptimizationResult {
@@ -55,16 +69,84 @@ interface OptimizationResult {
 }
 
 export default function TestPage() {
+  const router = useRouter()
+  const [username, setUsername] = useState<string>("")
+  const [userId, setUserId] = useState<string>("")
+  const [sessionId, setSessionId] = useState<string>("")
+  const [checkingAuth, setCheckingAuth] = useState(true)
+  
   const [prompt, setPrompt] = useState("")
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<string>("")
   
+  // History state
+  const [showHistory, setShowHistory] = useState(false)
+  const [history, setHistory] = useState<HistoryChat[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  
   // Optimization state
   const [optimizing, setOptimizing] = useState(false)
-  const [optimizationResult, setOptimizationResult] = useState<OptimizationResult | null>(null)
+  const [optimizationResult, setOptimizationResult] = useState<any>(null)
   const [optimizationError, setOptimizationError] = useState<string | null>(null)
+
+  // Check authentication on mount
+  useEffect(() => {
+    const storedSessionId = localStorage.getItem('session_id')
+    const storedUsername = localStorage.getItem('username')
+    const storedUserId = localStorage.getItem('user_id')
+    
+    if (!storedSessionId || !storedUsername || !storedUserId) {
+      router.push('/login')
+    } else {
+      setSessionId(storedSessionId)
+      setUsername(storedUsername)
+      setUserId(storedUserId)
+      setCheckingAuth(false)
+    }
+  }, [router])
+
+  const handleLogout = async () => {
+    try {
+      await fetch('http://localhost:5000/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId })
+      })
+    } catch (err) {
+      console.error('Logout error:', err)
+    }
+    
+    localStorage.removeItem('session_id')
+    localStorage.removeItem('username')
+    localStorage.removeItem('user_id')
+    router.push('/login')
+  }
+
+  const loadHistory = async () => {
+    if (history.length > 0) {
+      setShowHistory(!showHistory)
+      return
+    }
+    
+    setHistoryLoading(true)
+    try {
+      const response = await fetch(`http://localhost:5000/api/history/${userId}`, {
+        headers: { 'Authorization': `Bearer ${sessionId}` }
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setHistory(data.chats || [])
+        setShowHistory(true)
+      }
+    } catch (err) {
+      console.error('Failed to load history:', err)
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
 
   const handleOptimize = async () => {
     setOptimizing(true)
@@ -77,7 +159,7 @@ export default function TestPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ user_id: "default" }),
+        body: JSON.stringify({ user_id: userId }),
       })
 
       if (!response.ok) {
@@ -106,8 +188,8 @@ export default function TestPage() {
     setProgress("🔍 Detecting use case...")
 
     try {
-      setTimeout(() => setProgress("🔄 Testing across models (GPT-4o-mini, GPT-3.5-turbo)..."), 500)
-      setTimeout(() => setProgress("📊 Running quality evaluation (LLM-as-judge)..."), 3000)
+      setTimeout(() => setProgress("🔄 Testing across models..."), 500)
+      setTimeout(() => setProgress("📊 Running quality evaluation..."), 3000)
       setTimeout(() => setProgress("💰 Calculating cost-quality trade-offs..."), 6000)
       
       const response = await fetch("http://localhost:5000/analyze", {
@@ -115,7 +197,7 @@ export default function TestPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ prompt: prompt.trim() }),
+        body: JSON.stringify({ prompt: prompt.trim(), user_id: userId }),
       })
 
       if (!response.ok) {
@@ -123,9 +205,14 @@ export default function TestPage() {
       }
 
       const data = await response.json()
-      setProgress("✅ Analysis complete!")
+      setProgress(data.status === 'cached' ? "⚡ Cached response retrieved!" : "✅ Analysis complete!")
       setTimeout(() => setProgress(""), 1000)
       setResult(data)
+      
+      // Refresh history if new chat was saved
+      if (data.status !== 'cached') {
+        setHistory([])
+      }
     } catch (err) {
       setError("Failed to analyze prompt. Make sure the backend is running.")
       console.error(err)
@@ -133,6 +220,14 @@ export default function TestPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (checkingAuth) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <Loader2 className="animate-spin" size={40} />
+      </div>
+    )
   }
 
   const getUseCaseBadgeColor = (useCase: string) => {
@@ -146,7 +241,129 @@ export default function TestPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900">
       <TestHeader />
+      
+      {/* User Info & Logout */}
+      <div style={{
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        color: 'white',
+        padding: '16px',
+        marginBottom: '20px'
+      }}>
+        <div className="container mx-auto px-4 max-w-7xl">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <p style={{ margin: '0', fontSize: '14px', opacity: 0.9 }}>Logged in as</p>
+              <p style={{ margin: '0', fontSize: '18px', fontWeight: '600' }}>{username}</p>
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <Button
+                onClick={loadHistory}
+                disabled={historyLoading}
+                variant="outline"
+                size="sm"
+                style={{
+                  background: 'rgba(255,255,255,0.2)',
+                  color: 'white',
+                  borderColor: 'white'
+                }}
+              >
+                <History size={16} style={{ marginRight: '6px' }} />
+                {history.length > 0 ? `History (${history.length})` : 'View History'}
+              </Button>
+              <Button
+                onClick={handleLogout}
+                variant="outline"
+                size="sm"
+                style={{
+                  background: 'rgba(255,255,255,0.2)',
+                  color: 'white',
+                  borderColor: 'white'
+                }}
+              >
+                <LogOut size={16} style={{ marginRight: '6px' }} />
+                Logout
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="container mx-auto px-4 py-8 max-w-7xl">
+
+        {/* History Section */}
+        {showHistory && (
+          <Card className="mb-6 shadow-lg border-amber-200 dark:border-amber-800">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <History size={20} />
+                  Conversation History
+                </CardTitle>
+                <Button
+                  variant="ghost"
+                  onClick={() => setShowHistory(false)}
+                  size="sm"
+                >
+                  ✕
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {history.length === 0 ? (
+                <p className="text-gray-500">No previous conversations yet. Ask your first question!</p>
+              ) : (
+                <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                  {history.map((chat, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: '12px',
+                        marginBottom: '12px',
+                        background: '#f9f9f9',
+                        borderRadius: '6px',
+                        borderLeft: '3px solid #667eea'
+                      }}
+                    >
+                      <p style={{ margin: '0 0 6px 0', fontSize: '14px', fontWeight: '500' }}>
+                        Q: {chat.question.substring(0, 100)}{chat.question.length > 100 ? '...' : ''}
+                      </p>
+                      <div style={{ display: 'flex', gap: '12px', fontSize: '13px', color: '#666' }}>
+                        <span>Model: {chat.model}</span>
+                        <span>Quality: {(chat.quality * 100).toFixed(0)}%</span>
+                        <span>Cost: ${chat.cost.toFixed(4)}</span>
+                        <span>{new Date(chat.date).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Result or Cached Response Notification */}
+        {result && result.status === 'cached' && (
+          <Card className="mb-6 shadow-lg border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/20">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-green-700 dark:text-green-300">
+                <CheckCircle2 size={20} />
+                Cached Response Found!
+              </CardTitle>
+              <CardDescription className="text-green-600 dark:text-green-400">
+                {result.message}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 text-sm">
+                <p><strong>Original Question:</strong> {result.original_question}</p>
+                <p><strong>Model Used:</strong> {result.recommended_model}</p>
+                <p><strong>Quality Score:</strong> {(result.quality_score * 100).toFixed(0)}%</p>
+                <p><strong>Cost Saved:</strong> $0.00 (cached)</p>
+                <p><strong>Retrieved From:</strong> {result.cached_from}</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Quick Optimization Section - Track 4 Feature */}
         <Card className="mb-6 shadow-lg border-2 border-purple-200 dark:border-purple-800 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30">

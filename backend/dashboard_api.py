@@ -4,7 +4,7 @@ Serves optimization data to the Next.js dashboard
 Integrates the Multi-Agent Orchestration System
 """
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, session
 from flask_cors import CORS
 import json
 import os
@@ -23,9 +23,11 @@ from observability import (
 from orchestrator import CostQualityOrchestrator
 from user_metadata import user_service
 from cache_manager import cache_manager
+from session_manager import session_manager, chat_manager
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for Next.js frontend
+app.secret_key = os.getenv("SECRET_KEY", "hackathon-secret-key-change-in-prod")
 
 # Initialize database
 init_db()
@@ -55,6 +57,135 @@ def get_orchestrator():
     if _orchestrator is None:
         _orchestrator = CostQualityOrchestrator(get_replay_engine(), get_quality_evaluator())
     return _orchestrator
+
+
+# ============================================================================
+# SESSION & AUTHENTICATION ENDPOINTS
+# ============================================================================
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    """
+    Simple username-based login (no password for hackathon).
+    Creates session and returns user's historical conversations.
+    """
+    try:
+        data = request.get_json() or {}
+        username = data.get('username', '').strip()
+        
+        if not username:
+            return jsonify({'error': 'Username required'}), 400
+        
+        # Create or retrieve session
+        session_data = session_manager.login(username)
+        
+        # Get user's conversation history
+        history = chat_manager.get_user_history(session_data.user_id, limit=20)
+        
+        return jsonify({
+            'status': 'success',
+            'session_id': session_data.session_id,
+            'username': session_data.username,
+            'user_id': session_data.user_id,
+            'history': [
+                {
+                    'chat_id': h.chat_id,
+                    'question': h.question,
+                    'response': h.response,
+                    'model_used': h.model_used,
+                    'quality_score': h.quality_score,
+                    'cost': h.cost,
+                    'created_at': h.created_at
+                }
+                for h in history
+            ]
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout():
+    """Logout user"""
+    try:
+        data = request.get_json() or {}
+        session_id = data.get('session_id')
+        
+        if session_id:
+            session_manager.logout(session_id)
+        
+        return jsonify({'status': 'logged_out'})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/history/<user_id>')
+def get_history(user_id: str):
+    """Get user's conversation history"""
+    try:
+        history = chat_manager.get_user_history(user_id, limit=50)
+        
+        return jsonify({
+            'user_id': user_id,
+            'total': len(history),
+            'chats': [
+                {
+                    'chat_id': h.chat_id,
+                    'question': h.question[:100] + '...' if len(h.question) > 100 else h.question,
+                    'model': h.model_used,
+                    'quality': h.quality_score,
+                    'cost': h.cost,
+                    'date': h.created_at
+                }
+                for h in history
+            ]
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/history/<user_id>/similar', methods=['POST'])
+def find_similar_question(user_id: str):
+    """
+    Find if user asked similar question before.
+    If found, return cached response (no LLM call needed!).
+    """
+    try:
+        data = request.get_json() or {}
+        question = data.get('question', '').strip()
+        
+        if not question:
+            return jsonify({'similar': None})
+        
+        # Check if similar question exists in history
+        similar = chat_manager.find_similar_question(
+            user_id, 
+            question,
+            similarity_threshold=0.75
+        )
+        
+        if similar:
+            return jsonify({
+                'similar': True,
+                'similarity_score': similar.similarity_score,
+                'original_question': similar.question,
+                'cached_response': similar.response,
+                'model_used': similar.model_used,
+                'quality_score': similar.quality_score,
+                'cost': 0.0,  # No cost for cached response
+                'message': f'Found similar question (similarity: {similar.similarity_score:.0%}). Using cached response!'
+            })
+        else:
+            return jsonify({
+                'similar': False,
+                'message': 'No similar question found. Will run fresh analysis.'
+            })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/health')
@@ -299,18 +430,53 @@ def analyze_prompt():
     """
     Analyze a user prompt across all models
     Returns use case detection, recommendations, and full comparison
+    
+    Also saves to user's conversation history and checks for similar questions.
     """
     try:
         data = request.get_json()
         prompt = data.get('prompt', '').strip()
+        user_id = data.get('user_id', 'default')  # User ID for history
         
         if not prompt:
             return jsonify({'error': 'No prompt provided'}), 400
         
+        # STEP 1: Check if similar question exists in user's history
+        # Using 0.20 threshold for practical cache hits (20%+ meaningful word overlap)
+        similar = chat_manager.find_similar_question(user_id, prompt, similarity_threshold=0.20)
+        
+        if similar:
+            # Return cached response - no LLM calls needed!
+            print(f"\nFound similar question in history! Returning cached response.")
+            print(f"Similarity: {similar.similarity_score:.0%}\n")
+            
+            return jsonify({
+                'status': 'cached',
+                'message': f'Found similar question in your history (similarity: {similar.similarity_score:.0%}). Returning cached response!',
+                'use_case': 'cached_response',
+                'recommended_model': similar.model_used,
+                'quality_score': similar.quality_score,
+                'cost': 0.0,  # Free - no LLM call
+                'cached_from': similar.created_at,
+                'original_question': similar.question,
+                'response': similar.response,
+                'models': [{
+                    'model_name': similar.model_used,
+                    'quality_score': similar.quality_score,
+                    'cost': 0.0,
+                    'latency_ms': 0,
+                    'response': similar.response,
+                    'success': True,
+                    'is_cached': True
+                }]
+            })
+        
         print(f"\n{'='*80}")
         print(f"Analyzing prompt: {prompt[:100]}...")
+        print(f"User: {user_id}")
         print(f"{'='*80}\n")
         
+        # STEP 2: No cached response - run fresh analysis
         # Create prompt data
         prompt_data = PromptData(
             id="web_test_prompt",
@@ -395,6 +561,8 @@ def analyze_prompt():
         
         # Build response
         models_results = []
+        best_response = None
+        best_quality = 0
         for eval in evaluations:
             models_results.append({
                 'model_name': eval.model_name,
@@ -405,6 +573,10 @@ def analyze_prompt():
                 'success': eval.completion.success,
                 'dimension_scores': eval.quality.dimension_scores
             })
+            # Track best response for history saving
+            if eval.model_name == recommended_model:
+                best_response = eval.completion.response
+                best_quality = eval.quality.overall_score
         
         # Get reasoning
         reasoning = get_recommendation_reasoning(use_case, recommended_model, evaluations)
@@ -419,6 +591,28 @@ def analyze_prompt():
             "cost_quality_ratio": 0.85,
             "use_case": use_case
         })
+        
+        # STEP 3: Save to user's conversation history for future cache hits
+        if best_response and user_id != 'default':
+            try:
+                # Get cost of recommended model
+                recommended_cost = 0
+                for eval in evaluations:
+                    if eval.model_name == recommended_model:
+                        recommended_cost = eval.completion.cost
+                        break
+                
+                chat_manager.save_chat(
+                    user_id=user_id,
+                    question=prompt,
+                    response=best_response,
+                    model_used=recommended_model,
+                    quality_score=best_quality,
+                    cost=recommended_cost
+                )
+                print(f"✓ Saved to conversation history for user {user_id}")
+            except Exception as e:
+                print(f"⚠ Failed to save to history: {e}")
         
         result = {
             'use_case': use_case,
