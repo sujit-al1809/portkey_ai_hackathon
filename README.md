@@ -1,4 +1,4 @@
-# 🎯 Cost-Quality Optimization System
+# Cost-Quality Optimization System
 
 ## Track 4: Historical Replay & Trade-off Analysis
 
@@ -10,7 +10,7 @@
 
 ---
 
-## 🎯 What It Does
+## What It Does
 
 A **production-grade optimization system** that delivers:
 
@@ -29,54 +29,54 @@ A **production-grade optimization system** that delivers:
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      CONTINUOUS MONITOR                          │
-│   Runs 24/7 • Fetches prompts • Orchestrates pipeline           │
-└─────────────────────────┬───────────────────────────────────────┘
-                          │
-          ┌───────────────┼───────────────┐
-          ▼               ▼               ▼
-    ┌───────────┐   ┌───────────┐   ┌───────────┐
-    │  REPLAY   │   │  QUALITY  │   │  COST     │
-    │  ENGINE   │──▶│  EVALUATOR│──▶│  OPTIMIZER│
-    │           │   │(LLM Judge)│   │           │
-    └───────────┘   └───────────┘   └───────────┘
-          │               │               │
-          │      ┌────────┴────────┐      │
-          └─────▶│   SQLite DB     │◀─────┘
-                 │  + JSON Logs    │
-                 └────────┬────────┘
-                          │
-                          ▼
-    ┌─────────────────────────────────────────────────────────────┐
-    │                    DASHBOARD (Next.js)                       │
-    │    Stats • Charts • Model Comparison • Test Interface       │
-    └─────────────────────────────────────────────────────────────┘
++------------------------------------------------------------------+
+|                      CONTINUOUS MONITOR                           |
+|   Runs 24/7 - Fetches prompts - Orchestrates pipeline            |
++-----------------------------+------------------------------------+
+                              |
+          +-------------------+-------------------+
+          v                   v                   v
+    +-----------+       +-----------+       +-----------+
+    |  REPLAY   |       |  QUALITY  |       |  COST     |
+    |  ENGINE   |------>|  EVALUATOR|------>|  OPTIMIZER|
+    |           |       |(LLM Judge)|       |           |
+    +-----------+       +-----------+       +-----------+
+          |                   |                   |
+          |          +--------+--------+          |
+          +--------->|   SQLite DB     |<---------+
+                     |  + JSON Logs    |
+                     +--------+--------+
+                              |
+                              v
+    +------------------------------------------------------------------+
+    |                    DASHBOARD (Next.js)                            |
+    |    Stats - Charts - Model Comparison - Test Interface            |
+    +------------------------------------------------------------------+
 ```
 
 ---
 
-## ✅ Hackathon Requirements Checklist
+## Hackathon Requirements Checklist
 
 | Requirement | Status | Implementation |
 |-------------|--------|----------------|
-| **Continuous System** | ✅ | `continuous_monitor.py` - runs 24/7 |
-| **LLM Usage** | ✅ | LLM-as-judge for quality evaluation |
-| **State Management** | ✅ | SQLite DB + JSON state files |
-| **Cost Trade-offs** | ✅ | Per-prompt cost analysis |
-| **Quality Trade-offs** | ✅ | 4-dimension quality scoring |
-| **Refusal Rates** | ✅ | Auto-detection of model refusals |
-| **Failure Handling** | ✅ | Retry logic, error tracking |
-| **Explainability** | ✅ | Reasoning for each recommendation |
-| **Observability** | ✅ | Prometheus metrics, structured logs |
-| **Historical Replay** | ✅ | Replay across 4 models |
+| **Continuous System** | Done | `continuous_monitor.py` - runs 24/7 |
+| **LLM Usage** | Done | LLM-as-judge for quality evaluation |
+| **State Management** | Done | SQLite DB + JSON state files |
+| **Cost Trade-offs** | Done | Per-prompt cost analysis |
+| **Quality Trade-offs** | Done | 4-dimension quality scoring |
+| **Refusal Rates** | Done | Auto-detection of model refusals |
+| **Failure Handling** | Done | Retry logic, error tracking |
+| **Explainability** | Done | Reasoning for each recommendation |
+| **Observability** | Done | Prometheus metrics, structured logs |
+| **Historical Replay** | Done | Replay across 4 models |
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Setup
 ```bash
@@ -117,15 +117,41 @@ npm run dev
 
 ---
 
-## 📊 API Endpoints
+## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/dashboard-data` | GET | Dashboard stats & data |
+| `/api/optimize` | POST | Run multi-agent optimization |
 | `/analyze` | POST | Analyze a prompt |
 | `/health` | GET | System health check |
 | `/metrics` | GET | Prometheus metrics |
 | `/api/system-stats` | GET | Detailed system stats |
+
+### Example: Run Optimization
+```bash
+curl -X POST http://localhost:5000/api/optimize \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "default"}'
+```
+
+Response:
+```json
+{
+  "status": "success",
+  "summary": "Switching from gpt-4o to GPT-4o Mini reduces cost by 96.5% with a 2.0% quality impact.",
+  "recommendation": {
+    "current_model": "gpt-4o",
+    "recommended_model": "gpt-4o-mini",
+    "projected_cost_saving_percent": 96.5,
+    "projected_quality_impact_percent": -2.0,
+    "business_impact": {
+      "monthly_savings_usd": 53.05,
+      "annual_savings_usd": 636.60
+    }
+  }
+}
+```
 
 ### Example: Analyze Prompt
 ```bash
@@ -134,43 +160,34 @@ curl -X POST http://localhost:5000/analyze \
   -d '{"prompt": "Write a Python function to sort a list"}'
 ```
 
-Response:
-```json
-{
-  "use_case": "Code Generation",
-  "recommended_model": "GPT-4o-mini",
-  "reasoning": "GPT-4o-mini recommended for code generation with 92.0/100 quality score",
-  "cost_savings_percent": 45.8,
-  "quality_impact_percent": 7.0,
-  "models": [...]
-}
-```
-
 ---
 
-## 🧠 Models Tested
+## Models Tested
 
 | Model | Provider | Strengths | Cost/1K |
 |-------|----------|-----------|---------|
-| GPT-4o-mini | OpenAI | General, Reasoning | $0.15 |
-| GPT-3.5-turbo | OpenAI | Fast, Cost-effective | $0.50 |
-| Claude-Haiku | Anthropic | Security, Analysis | $1.00 |
-| Llama-3.3-70B | Groq | Code, Speed | $0.59 |
+| GPT-4-turbo | OpenAI | Complex tasks | $10.00 |
+| GPT-4o | OpenAI | Balanced | $2.50 |
+| GPT-4o-mini | OpenAI | Cost-effective | $0.15 |
+| GPT-3.5-turbo | OpenAI | Fast, Budget | $0.50 |
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 portkey_ai_hackathon/
 ├── backend/                 # Python API & optimization engine
 │   ├── dashboard_api.py     # Flask API server
+│   ├── orchestrator.py      # Multi-agent optimization system
+│   ├── model_registry.py    # Model catalog with pricing
+│   ├── user_metadata.py     # User profiles & constraints
+│   ├── cache_manager.py     # State & caching
 │   ├── replay_engine.py     # Multi-model replay
 │   ├── quality_evaluator.py # LLM-as-judge
 │   ├── optimizer.py         # Cost-quality analysis
 │   ├── database.py          # SQLite persistence
 │   ├── observability.py     # Metrics & logging
-│   ├── continuous_monitor.py# 24/7 operation
 │   └── data/                # SQLite DB + logs
 ├── dashboard/               # Next.js frontend
 │   ├── app/                 # Pages & routes
@@ -181,7 +198,7 @@ portkey_ai_hackathon/
 
 ---
 
-## 🔒 Production Readiness
+## Production Readiness
 
 ### If this ran unattended for 6 months:
 
@@ -193,38 +210,38 @@ portkey_ai_hackathon/
 6. **Refusal Tracking** - Detect model safety issues
 
 ### Would an enterprise trust it?
-✅ Yes - with proper monitoring, alerting, and the observability built in.
+Yes - with proper monitoring, alerting, and the observability built in.
 
 ---
 
-## 📈 Sample Output
+## Sample Output
 
 ```
 ============================================================
 OPTIMIZATION RECOMMENDATION
 ============================================================
-Current Model: GPT-4o-mini
-Recommended Model: GPT-3.5-turbo
+Current Model: GPT-4o
+Recommended Model: GPT-4o-mini
 
-Cost Reduction: 45.8%
-Quality Impact: 7.0% decrease
+Cost Reduction: 96.5%
+Quality Impact: 2.0% decrease
 
-Confidence: 92%
+Confidence: 88%
 Sample Size: 5 prompts
 
-Reasoning: GPT-3.5-turbo achieves near-equivalent quality at 
+Reasoning: GPT-4o-mini achieves near-equivalent quality at 
 significantly lower cost for general tasks.
 ============================================================
 ```
 
 ---
 
-## 👥 Team
+## Team
 
 Built for the Portkey AI Builders Challenge
 
 ---
 
-## 📜 License
+## License
 
 MIT
