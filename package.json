@@ -1,0 +1,14 @@
+{
+  "name": "cost-quality-optimization",
+  "version": "1.0.0",
+  "description": "AI Model Cost-Quality Optimization System",
+  "scripts": {
+    "backend": "cd backend && python dashboard_api.py",
+    "frontend": "cd dashboard && npm run dev",
+    "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
+    "test": "cd backend && python demo_with_data.py"
+  },
+  "keywords": ["ai", "optimization", "portkey", "cost-quality"],
+  "author": "Your Team",
+  "license": "MIT"
+}

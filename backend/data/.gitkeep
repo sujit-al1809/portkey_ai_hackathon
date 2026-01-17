@@ -1,0 +1,5 @@
+# Data directory - stores analysis results
+# Files are generated during runtime
+
+*.json
+!.gitkeep

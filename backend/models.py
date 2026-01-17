@@ -31,7 +31,9 @@ class CompletionResult:
     latency_ms: float
     cost: float
     success: bool
+    is_refusal: bool = False
     error: Optional[str] = None
+    retry_count: int = 0
     timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
     
     def to_dict(self):

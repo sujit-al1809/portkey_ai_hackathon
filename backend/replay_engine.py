@@ -34,6 +34,25 @@ class ReplayEngine:
         output_cost = (tokens_output / 1000) * model_config["expected_cost_per_1k_output"]
         return input_cost + output_cost
     
+    def _detect_refusal(self, response: str) -> bool:
+        """Detect if the model refused to answer"""
+        refusal_patterns = [
+            "I cannot",
+            "I can't",
+            "I'm not able to",
+            "I am not able to",
+            "I apologize, but I cannot",
+            "I'm sorry, but I can't",
+            "against my guidelines",
+            "I don't have the ability",
+            "I'm unable to",
+            "I am unable to",
+            "not appropriate for me to",
+            "decline to"
+        ]
+        response_lower = response.lower()
+        return any(pattern.lower() in response_lower for pattern in refusal_patterns)
+    
     def replay_prompt_on_model(
         self, 
         prompt: PromptData, 
@@ -51,6 +70,7 @@ class ReplayEngine:
             response = client.chat.completions.create(
                 model=model_config["model"],  # e.g., @openai/gpt-4o-mini
                 messages=prompt.messages,
+                max_tokens=model_config.get("max_tokens", 1000),
                 timeout=TIMEOUT
             )
             
@@ -64,17 +84,23 @@ class ReplayEngine:
             # Calculate cost
             cost = self._calculate_cost(model_config, tokens_input, tokens_output)
             
+            # Detect refusals
+            is_refusal = self._detect_refusal(completion_text)
+            if is_refusal:
+                logger.warning(f"⚠ {model_config['name']}: REFUSAL DETECTED")
+            
             logger.info(f"✓ {model_config['name']}: {latency_ms:.0f}ms, ${cost:.6f}")
             
             return CompletionResult(
                 model_name=model_config["name"],
-                provider=model_config["model"].split("/")[0].replace("@", ""),  # Extract from @provider/model
+                provider=model_config["model"].split("/")[0].replace("@", ""),
                 response=completion_text,
                 tokens_input=tokens_input,
                 tokens_output=tokens_output,
                 latency_ms=latency_ms,
                 cost=cost,
-                success=True
+                success=True,
+                is_refusal=is_refusal
             )
             
         except Exception as e:
