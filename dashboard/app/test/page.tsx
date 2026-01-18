@@ -12,6 +12,31 @@ import { Loader2, Send, AlertCircle, CheckCircle2, TrendingDown, TrendingUp, Zap
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
+// Knowledge cutoff dates for models
+const MODEL_CUTOFFS: Record<string, string> = {
+  "gpt-4o": "April 2024",
+  "gpt-4-turbo": "April 2024",
+  "gpt-3.5-turbo": "April 2023",
+  "claude-3-5-sonnet": "June 2024",
+  "claude-3-opus": "February 2024",
+  "llama-2-70b": "July 2023",
+  "mistral-7b": "December 2023",
+  "command-r": "March 2024",
+  "palm-2": "December 2023",
+}
+
+// Component to display knowledge cutoff info
+function KnowledgeCutoffBadge({ modelName }: { modelName: string }) {
+  const normalizedName = modelName.toLowerCase()
+  const cutoff = MODEL_CUTOFFS[normalizedName] || "Unknown"
+  
+  return (
+    <span className="inline-block bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded text-xs">
+      📅 Knowledge cutoff: <strong>{cutoff}</strong>
+    </span>
+  )
+}
+
 interface ModelResult {
   model_name: string
   quality_score: number
@@ -36,6 +61,7 @@ interface AnalysisResult {
   is_cached?: boolean
   original_question?: string
   quality_score?: number
+  fallback_note?: string
 }
 
 interface HistoryChat {
@@ -86,6 +112,7 @@ export default function TestPage() {
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<string>("")
+  const [autoMode, setAutoMode] = useState(true)  // Auto mode toggle
   
   // History state
   const [showHistory, setShowHistory] = useState(false)
@@ -191,14 +218,20 @@ export default function TestPage() {
     setLoading(true)
     setError(null)
     setResult(null)
-    setProgress("🔍 Detecting use case...")
+    
+    const endpoint = autoMode ? '/auto' : '/analyze'
+    const progressMessages = autoMode 
+      ? ["🚀 Auto Mode - Finding best model...", "⚡ Selecting optimal response..."]
+      : ["🔍 Detecting use case...", "🔄 Testing across models...", "📊 Running quality evaluation...", "💰 Calculating cost-quality trade-offs..."]
+    
+    setProgress(progressMessages[0])
 
     try {
-      setTimeout(() => setProgress("🔄 Testing across models..."), 500)
-      setTimeout(() => setProgress("📊 Running quality evaluation..."), 3000)
-      setTimeout(() => setProgress("💰 Calculating cost-quality trade-offs..."), 6000)
+      progressMessages.forEach((msg, idx) => {
+        setTimeout(() => setProgress(msg), idx * 2000)
+      })
       
-      const response = await fetch(`${API_BASE_URL}/analyze`, {
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -211,7 +244,7 @@ export default function TestPage() {
       }
 
       const data = await response.json()
-      setProgress(data.status === 'cached' ? "⚡ Cached response retrieved!" : "✅ Analysis complete!")
+      setProgress(data.status === 'cached' ? "⚡ Cached response retrieved!" : "✅ Complete!")
       setTimeout(() => setProgress(""), 1000)
       setResult(data)
       
@@ -237,6 +270,7 @@ export default function TestPage() {
   }
 
   const getUseCaseBadgeColor = (useCase: string) => {
+    if (!useCase) return "bg-gray-500"
     const lowerCase = useCase.toLowerCase()
     if (lowerCase.includes("code")) return "bg-blue-500"
     if (lowerCase.includes("security")) return "bg-red-500"
@@ -422,84 +456,110 @@ export default function TestPage() {
           
           {optimizationResult && optimizationResult.status === "success" && (
             <CardContent className="space-y-4">
-              {/* Summary Banner */}
-              <div className="p-6 bg-gradient-to-r from-green-100 to-emerald-100 dark:from-green-900/40 dark:to-emerald-900/40 rounded-xl border-2 border-green-300 dark:border-green-700">
-                <p className="text-2xl font-bold text-green-800 dark:text-green-200 text-center">
-                  💡 {optimizationResult.summary}
+              {/* Recommendation Banner */}
+              <div className="p-4 bg-gradient-to-r from-green-100 to-emerald-100 dark:from-green-900/40 dark:to-emerald-900/40 rounded-lg border-2 border-green-300 dark:border-green-700">
+                <p className="text-lg font-bold text-green-800 dark:text-green-200">
+                  💡 Switching from {optimizationResult.recommendation.current_model} to {optimizationResult.recommendation.recommended_model} reduces cost by {optimizationResult.recommendation.projected_cost_saving_percent.toFixed(1)}% with a {Math.abs(optimizationResult.recommendation.projected_quality_impact_percent).toFixed(1)}% quality impact.
                 </p>
               </div>
               
               {/* Stats Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border shadow-sm">
-                  <div className="flex items-center gap-2 mb-2">
-                    <TrendingDown className="h-5 w-5 text-green-600" />
-                    <span className="text-sm text-slate-600 dark:text-slate-400">Cost Savings</span>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="p-3 bg-white dark:bg-slate-800 rounded-lg border shadow-sm">
+                  <div className="flex items-center gap-1 mb-2">
+                    <TrendingDown className="h-4 w-4 text-green-600" />
+                    <span className="text-xs text-slate-600 dark:text-slate-400">Cost Savings</span>
                   </div>
-                  <p className="text-3xl font-bold text-green-600">
+                  <p className="text-2xl font-bold text-green-600">
                     {optimizationResult.recommendation.projected_cost_saving_percent.toFixed(1)}%
                   </p>
                 </div>
                 
-                <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border shadow-sm">
-                  <div className="flex items-center gap-2 mb-2">
-                    <TrendingUp className="h-5 w-5 text-orange-600" />
-                    <span className="text-sm text-slate-600 dark:text-slate-400">Quality Impact</span>
+                <div className="p-3 bg-white dark:bg-slate-800 rounded-lg border shadow-sm">
+                  <div className="flex items-center gap-1 mb-2">
+                    <TrendingUp className="h-4 w-4 text-orange-600" />
+                    <span className="text-xs text-slate-600 dark:text-slate-400">Quality Impact</span>
                   </div>
-                  <p className="text-3xl font-bold text-orange-600">
+                  <p className="text-2xl font-bold text-orange-600">
                     {Math.abs(optimizationResult.recommendation.projected_quality_impact_percent).toFixed(1)}%
                   </p>
                 </div>
                 
-                <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border shadow-sm">
-                  <div className="flex items-center gap-2 mb-2">
-                    <DollarSign className="h-5 w-5 text-blue-600" />
-                    <span className="text-sm text-slate-600 dark:text-slate-400">Monthly Savings</span>
+                <div className="p-3 bg-white dark:bg-slate-800 rounded-lg border shadow-sm">
+                  <div className="flex items-center gap-1 mb-2">
+                    <DollarSign className="h-4 w-4 text-blue-600" />
+                    <span className="text-xs text-slate-600 dark:text-slate-400">Monthly Savings</span>
                   </div>
-                  <p className="text-3xl font-bold text-blue-600">
-                    ${optimizationResult.recommendation.business_impact.projected_monthly_savings_usd.toFixed(2)}
+                  <p className="text-2xl font-bold text-blue-600">
+                    ${optimizationResult.monthly_savings_estimate?.toFixed(2) || "0.00"}
                   </p>
                 </div>
                 
-                <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border shadow-sm">
-                  <div className="flex items-center gap-2 mb-2">
-                    <CheckCircle2 className="h-5 w-5 text-purple-600" />
-                    <span className="text-sm text-slate-600 dark:text-slate-400">Confidence</span>
+                <div className="p-3 bg-white dark:bg-slate-800 rounded-lg border shadow-sm">
+                  <div className="flex items-center gap-1 mb-2">
+                    <CheckCircle2 className="h-4 w-4 text-purple-600" />
+                    <span className="text-xs text-slate-600 dark:text-slate-400">Confidence</span>
                   </div>
-                  <p className="text-3xl font-bold text-purple-600">
-                    {(optimizationResult.recommendation.confidence * 100).toFixed(0)}%
+                  <p className="text-2xl font-bold text-purple-600">
+                    {optimizationResult.recommendation.confidence}%
                   </p>
                 </div>
               </div>
               
-              {/* Model Switch Details */}
-              <div className="p-4 bg-white dark:bg-slate-800 rounded-lg border">
-                <h4 className="font-semibold mb-3">Recommended Switch</h4>
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-slate-100 dark:bg-slate-700 rounded-lg">
-                    <p className="text-sm text-slate-500">Current</p>
-                    <p className="font-bold">{optimizationResult.recommendation.current_model}</p>
-                  </div>
-                  <span className="text-2xl">→</span>
-                  <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-lg border-2 border-green-300">
-                    <p className="text-sm text-green-600">Recommended</p>
-                    <p className="font-bold text-green-700 dark:text-green-300">{optimizationResult.recommendation.recommended_model_display}</p>
-                  </div>
+              {/* All Models Comparison */}
+              <div>
+                <h4 className="font-semibold mb-3 text-lg">All Models Comparison</h4>
+                <div className="grid grid-cols-1 gap-3">
+                  {optimizationResult.models && optimizationResult.models.length > 0 ? (
+                    optimizationResult.models.map((model: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className={`p-4 rounded-lg border-2 transition ${
+                          model.model_name === optimizationResult.recommendation.recommended_model
+                            ? 'border-green-400 bg-green-50 dark:border-green-600 dark:bg-green-900/20'
+                            : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <h5 className="font-semibold text-lg">{model.model_name}</h5>
+                            {model.model_name === optimizationResult.recommendation.recommended_model && (
+                              <Badge className="bg-green-500 text-white">Recommended</Badge>
+                            )}
+                          </div>
+                          <Badge variant={model.success ? "default" : "destructive"}>
+                            {model.success ? "✓ Success" : "✗ Failed"}
+                          </Badge>
+                        </div>
+                        
+                        <div className="grid grid-cols-3 gap-3 mb-2">
+                          <div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Quality</p>
+                            <p className="text-xl font-bold text-slate-800 dark:text-slate-200">{model.quality_score.toFixed(0)}</p>
+                            <p className="text-xs text-slate-500">/ 100</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Cost</p>
+                            <p className="text-xl font-bold text-slate-800 dark:text-slate-200">${model.cost.toFixed(6)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Speed</p>
+                            <p className="text-xl font-bold text-slate-800 dark:text-slate-200">{model.latency_ms.toFixed(0)}</p>
+                            <p className="text-xs text-slate-500">ms</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center p-4 text-slate-500">No models to display</div>
+                  )}
                 </div>
-                
-                {optimizationResult.recommendation.fallback_option && (
-                  <div className="mt-3 p-2 bg-slate-50 dark:bg-slate-900 rounded text-sm">
-                    <span className="text-slate-500">Fallback: </span>
-                    <span className="font-medium">{optimizationResult.recommendation.fallback_option.model}</span>
-                    <span className="text-slate-500"> ({optimizationResult.recommendation.fallback_option.cost_saving_percent}% savings)</span>
-                  </div>
-                )}
               </div>
               
               {/* Processing Info */}
-              <div className="text-sm text-slate-500 text-right">
-                Processed in {optimizationResult.processing_time_seconds.toFixed(2)}s | 
-                Verification cost: ${optimizationResult.verification_cost_usd.toFixed(4)}
+              <div className="text-xs text-slate-500 text-right">
+                Processed in {optimizationResult.processing_time_seconds?.toFixed(2) || "0.1"}s | 
+                Verification cost: ${optimizationResult.verification_cost_usd?.toFixed(6) || "0.000000"}
               </div>
             </CardContent>
           )}
@@ -520,13 +580,48 @@ export default function TestPage() {
         {/* Input Section */}
         <Card className="mb-6 shadow-lg">
           <CardHeader>
-            <CardTitle>Test Your Prompt</CardTitle>
-            <CardDescription>
-              System will analyze and recommend the best model for your use case
-            </CardDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Test Your Prompt</CardTitle>
+                <CardDescription>
+                  System will analyze and recommend the best model for your use case
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                  {autoMode ? "🚀 Auto Mode" : "📊 Full Analysis"}
+                </span>
+                <button
+                  onClick={() => setAutoMode(!autoMode)}
+                  className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
+                    autoMode ? 'bg-blue-600' : 'bg-gray-300'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
+                      autoMode ? 'translate-x-7' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
+              <div className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+                <p className="text-sm text-slate-700 dark:text-slate-300">
+                  {autoMode ? (
+                    <>
+                      <strong>Auto Mode:</strong> Automatically selects the best model based on cost, quality, and knowledge cutoff. Just get the answer!
+                    </>
+                  ) : (
+                    <>
+                      <strong>Full Analysis:</strong> See detailed breakdown of all models tested, quality scores, costs, and trade-off analysis.
+                    </>
+                  )}
+                </p>
+              </div>
+              
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
@@ -543,12 +638,12 @@ export default function TestPage() {
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Analyzing...
+                    {autoMode ? "Finding best model..." : "Analyzing..."}
                   </>
                 ) : (
                   <>
                     <Send className="mr-2 h-5 w-5" />
-                    Analyze Prompt
+                    {autoMode ? "Get Answer" : "Full Analysis"}
                   </>
                 )}
               </Button>
@@ -560,7 +655,7 @@ export default function TestPage() {
                 <div>
                   <p className="text-blue-800 dark:text-blue-200 font-medium">{progress}</p>
                   <p className="text-blue-600 dark:text-blue-400 text-sm mt-1">
-                    This takes 10-15 seconds (testing multiple models + quality evaluation)
+                    {autoMode ? "Finding the best model..." : "Testing multiple models + quality evaluation..."}
                   </p>
                 </div>
               </div>
@@ -574,6 +669,89 @@ export default function TestPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Auto Mode Result */}
+        {result && autoMode && (result as any).mode === 'auto' && (
+          <Card className="mb-6 shadow-lg border-2 border-green-400 dark:border-green-600 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-2xl text-green-800 dark:text-green-200">
+                <Zap className="h-6 w-6" />
+                Auto Mode Result
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {/* Answer */}
+                <div className="p-4 bg-white dark:bg-slate-900 rounded-lg border-2 border-green-200 dark:border-green-800">
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">Answer from {(result as any).model_used}:</p>
+                  <p className="text-lg text-slate-800 dark:text-slate-200 leading-relaxed">
+                    {(result as any).answer}
+                  </p>
+                </div>
+
+                {/* Summary Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="p-3 bg-blue-100 dark:bg-blue-900/50 rounded-lg">
+                    <p className="text-xs text-slate-600 dark:text-slate-400">Quality</p>
+                    <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">
+                      {((result as any).summary?.quality?.score || 0).toFixed(0)}%
+                    </p>
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      {(result as any).summary?.quality?.level}
+                    </p>
+                  </div>
+
+                  <div className="p-3 bg-green-100 dark:bg-green-900/50 rounded-lg">
+                    <p className="text-xs text-slate-600 dark:text-slate-400">Cost</p>
+                    <p className="text-2xl font-bold text-green-700 dark:text-green-300">
+                      ${((result as any).summary?.cost?.amount || 0).toFixed(6)}
+                    </p>
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                      {(result as any).summary?.cost?.level}
+                    </p>
+                  </div>
+
+                  <div className="p-3 bg-purple-100 dark:bg-purple-900/50 rounded-lg">
+                    <p className="text-xs text-slate-600 dark:text-slate-400">Speed</p>
+                    <p className="text-2xl font-bold text-purple-700 dark:text-purple-300">
+                      {((result as any).summary?.latency_ms || 0).toFixed(0)}ms
+                    </p>
+                    <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">Latency</p>
+                  </div>
+
+                  <div className="p-3 bg-amber-100 dark:bg-amber-900/50 rounded-lg">
+                    <p className="text-xs text-slate-600 dark:text-slate-400">Score</p>
+                    <p className="text-2xl font-bold text-amber-700 dark:text-amber-300">
+                      {(((result as any).summary?.overall_score || 0) * 100).toFixed(0)}%
+                    </p>
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Overall</p>
+                  </div>
+                </div>
+
+                {/* Selection Reason */}
+                <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-lg border-l-4 border-green-500">
+                  <p className="text-sm text-slate-700 dark:text-slate-300">
+                    <strong>Why {(result as any).model_used}?</strong> {(result as any).model_selection_reason}
+                  </p>
+                </div>
+
+                {/* Alternatives */}
+                {(result as any).alternatives && (result as any).alternatives.length > 0 && (
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-lg">
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Other options:</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {(result as any).alternatives.map((alt: any, idx: number) => (
+                        <span key={idx} className="text-xs bg-white dark:bg-slate-800 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400">
+                          {alt.model}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Results Section */}
         {result && (
@@ -599,6 +777,15 @@ export default function TestPage() {
                   <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950 dark:to-purple-950 rounded-lg border border-blue-200 dark:border-blue-800">
                     <h3 className="font-semibold text-lg mb-2">🎯 Best Model: {result.recommended_model}</h3>
                     <p className="text-slate-700 dark:text-slate-300">{result.reasoning}</p>
+                    
+                    {(result as any).fallback_note && (
+                      <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/30 border-l-4 border-amber-500 rounded">
+                        <p className="text-sm text-amber-800 dark:text-amber-200 flex items-start gap-2">
+                          <span className="text-lg">⚠️</span>
+                          <span><strong>Knowledge Cutoff:</strong> {(result as any).fallback_note}</span>
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -654,6 +841,7 @@ export default function TestPage() {
                 </CardContent>
               </Card>
             )}
+            {result.models && (
             <Card className="shadow-lg">
               <CardHeader>
                 <CardTitle>Model Comparison</CardTitle>
@@ -707,6 +895,11 @@ export default function TestPage() {
                               {model.response}
                             </p>
                           </div>
+                          
+                          {/* Knowledge Cutoff Info */}
+                          <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                            <KnowledgeCutoffBadge modelName={model.model_name} />
+                          </div>
                         </>
                       )}
                     </div>
@@ -714,6 +907,7 @@ export default function TestPage() {
                 </div>
               </CardContent>
             </Card>
+            )}
           </div>
         )}
       </div>
