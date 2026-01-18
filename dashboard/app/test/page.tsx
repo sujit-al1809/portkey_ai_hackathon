@@ -8,6 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Loader2, Send, AlertCircle, CheckCircle2, TrendingDown, TrendingUp, Zap, DollarSign, Target, LogOut, History } from "lucide-react"
 
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+
 interface ModelResult {
   model_name: string
   quality_score: number
@@ -111,7 +113,7 @@ export default function TestPage() {
 
   const handleLogout = async () => {
     try {
-      await fetch('http://localhost:5000/api/auth/logout', {
+      await fetch(`${API_BASE_URL}/api/auth/logout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: sessionId })
@@ -134,7 +136,7 @@ export default function TestPage() {
     
     setHistoryLoading(true)
     try {
-      const response = await fetch(`http://localhost:5000/api/history/${userId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/history/${userId}`, {
         headers: { 'Authorization': `Bearer ${sessionId}` }
       })
       
@@ -156,7 +158,7 @@ export default function TestPage() {
     setOptimizationResult(null)
 
     try {
-      const response = await fetch("http://localhost:5000/api/optimize", {
+      const response = await fetch(`${API_BASE_URL}/api/optimize`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -194,7 +196,7 @@ export default function TestPage() {
       setTimeout(() => setProgress("📊 Running quality evaluation..."), 3000)
       setTimeout(() => setProgress("💰 Calculating cost-quality trade-offs..."), 6000)
       
-      const response = await fetch("http://localhost:5000/analyze", {
+      const response = await fetch(`${API_BASE_URL}/analyze`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

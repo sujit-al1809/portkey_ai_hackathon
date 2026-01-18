@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+
 export async function GET() {
   try {
-    const response = await fetch('http://localhost:5000/api/dashboard-data', {
+    const response = await fetch(`${API_BASE_URL}/api/dashboard-data`, {
       cache: 'no-store'
     });
     const data = await response.json();
