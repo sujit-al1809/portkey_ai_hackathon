@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
