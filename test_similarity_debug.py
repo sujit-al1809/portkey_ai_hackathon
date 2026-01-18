@@ -26,5 +26,5 @@ for q1, q2 in test_pairs:
     print(f"\nQ1: '{q1}'")
     print(f"Q2: '{q2}'")
     print(f"Similarity: {score:.2f} ({score:.0%})")
-    print(f"Cache hit at 0.50 threshold: {'✓ YES' if score >= 0.50 else '✗ NO'}")
-    print(f"Cache hit at 0.30 threshold: {'✓ YES' if score >= 0.30 else '✗ NO'}")
+    print(f"Cache hit at 0.35 threshold: {'✓ YES' if score >= 0.35 else '✗ NO'}")
+    print(f"Cache hit at 0.20 threshold: {'✓ YES' if score >= 0.20 else '✗ NO'}")

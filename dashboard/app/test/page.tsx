@@ -596,9 +596,11 @@ export default function TestPage() {
                         <h4 className="font-semibold text-green-800 dark:text-green-200">Cost Savings</h4>
                       </div>
                       <p className="text-3xl font-bold text-green-600 dark:text-green-400">
-                        {result.cost_savings_percent.toFixed(1)}%
+                        {(result.cost_savings_percent ?? result.cost_savings_percent !== undefined ? result.cost_savings_percent : 0).toFixed(1)}%
                       </p>
-                      <p className="text-sm text-green-700 dark:text-green-300 mt-1">Potential reduction</p>
+                      <p className="text-sm text-green-700 dark:text-green-300 mt-1">
+                        {result.status === 'cached' ? 'Cached response (100% saved!)' : 'Potential reduction'}
+                      </p>
                     </div>
 
                     <div className="p-4 bg-orange-50 dark:bg-orange-950/30 rounded-lg border border-orange-200 dark:border-orange-800">
@@ -607,10 +609,10 @@ export default function TestPage() {
                         <h4 className="font-semibold text-orange-800 dark:text-orange-200">Quality Impact</h4>
                       </div>
                       <p className="text-3xl font-bold text-orange-600 dark:text-orange-400">
-                        {Math.abs(result.quality_impact_percent).toFixed(1)}%
+                        {(result.quality_impact_percent ?? 0).toFixed(1)}%
                       </p>
                       <p className="text-sm text-orange-700 dark:text-orange-300 mt-1">
-                        {result.quality_impact_percent > 0 ? "Improvement" : "Trade-off"}
+                        {result.status === 'cached' ? 'No new analysis needed' : (result.quality_impact_percent > 0 ? "Improvement" : "Trade-off")}
                       </p>
                     </div>
                   </div>
@@ -618,7 +620,28 @@ export default function TestPage() {
               </CardContent>
             </Card>
 
-            {/* Model Comparison */}
+            {/* Cached Response Notification */}
+            {result.status === 'cached' && (
+              <Card className="shadow-lg border-2 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-amber-900 dark:text-amber-100">
+                    <Zap className="h-5 w-5 text-amber-600" />
+                    Cached Response
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-amber-900 dark:text-amber-100 mb-2">
+                    <strong>Similar question found in your history!</strong>
+                  </p>
+                  <p className="text-sm text-amber-800 dark:text-amber-200 mb-3">
+                    Original question: <em>"{result.original_question}"</em>
+                  </p>
+                  <p className="text-sm text-amber-800 dark:text-amber-200">
+                    Model used: <strong>{result.recommended_model}</strong> | Quality: <strong>{((result.quality_score ?? 0) * 100).toFixed(0)}/100</strong>
+                  </p>
+                </CardContent>
+              </Card>
+            )}
             <Card className="shadow-lg">
               <CardHeader>
                 <CardTitle>Model Comparison</CardTitle>

@@ -38,7 +38,7 @@ print("\n3. Similar Question: 'How can I make Python scripts faster?'")
 similar = chat_manager.find_similar_question(
     user_id=session.user_id,
     question="How can I make Python scripts faster?",
-    similarity_threshold=0.20
+    similarity_threshold=0.35
 )
 
 if similar:

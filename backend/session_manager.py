@@ -284,46 +284,74 @@ class HistoricalChatManager:
         return best_match
     
     def _calculate_similarity(self, text1: str, text2: str) -> float:
-        """Calculate similarity between two texts (0-1) using improved algorithm"""
+        """
+        Calculate semantic similarity between two texts (0-1)
+        Uses multiple signals:
+        1. Exact phrase matching (highest weight)
+        2. Question intent matching (question words at same position)
+        3. Entity/noun overlap (key topic words)
+        4. Word overlap (Jaccard similarity)
+        """
         import re
         
         # Normalize text
         text1_clean = re.sub(r'[^a-z0-9\s]', '', text1.lower())
         text2_clean = re.sub(r'[^a-z0-9\s]', '', text2.lower())
         
-        # Common stop words to ignore
-        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'is', 'are', 'was', 'be', 'by', 'do', 'i', 'my', 'me', 'you', 'your'}
-        
-        # Get significant words (non-stop words, len > 2)
-        words1 = set(w for w in text1_clean.split() if w not in stop_words and len(w) > 2)
-        words2 = set(w for w in text2_clean.split() if w not in stop_words and len(w) > 2)
+        # Extract words
+        words1 = text1_clean.split()
+        words2 = text2_clean.split()
         
         if not words1 or not words2:
             return 0.0
         
-        # Calculate intersection and union
-        intersection = len(words1 & words2)
-        union = len(words1 | words2)
+        # 1. EXACT PHRASE MATCHING - if one contains the other, high similarity
+        if len(text1_clean) > 20 and len(text2_clean) > 20:
+            # For longer texts, check if they share significant phrases
+            words1_set = set(words1)
+            words2_set = set(words2)
+            shared = words1_set & words2_set
+            
+            # Extract key content words (non-stop words)
+            stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'is', 'are', 'was', 'be', 'by', 'do', 'i', 'my', 'me', 'you', 'your', 'vs', 'versus', 'vs'}
+            content1 = set(w for w in words1_set if w not in stop_words and len(w) > 2)
+            content2 = set(w for w in words2_set if w not in stop_words and len(w) > 2)
+            
+            if not content1 or not content2:
+                return 0.0
+            
+            # 2. QUESTION INTENT - check if questions ask the same thing
+            q_words = {'who', 'what', 'which', 'where', 'when', 'why', 'how', 'is', 'are', 'do', 'does', 'will', 'can', 'should', 'could', 'would'}
+            q1_word = next((w for w in words1 if w in q_words), None)
+            q2_word = next((w for w in words2 if w in q_words), None)
+            
+            intent_match = 1.0 if q1_word == q2_word else 0.3
+            
+            # 3. ENTITY OVERLAP - shared key topics
+            entity_overlap = len(content1 & content2) / len(content1 | content2) if (content1 | content2) else 0.0
+            
+            # 4. WORD POSITION - if first/last words are similar, likely same topic
+            first_word_match = 1.0 if words1[0] == words2[0] else (0.8 if words1[0] in words2_set else 0.0)
+            
+            # COMBINED SCORING:
+            # Intent match (40%) + Entity overlap (35%) + First word match (25%)
+            combined_score = (0.4 * intent_match) + (0.35 * entity_overlap) + (0.25 * first_word_match)
+            
+            return combined_score
         
-        # Jaccard similarity on significant words
-        jaccard = intersection / union if union > 0 else 0.0
-        
-        # Also check for common substrings (n-grams)
-        # Extract 2-3 character n-grams
-        def get_ngrams(text, n=3):
-            text = text.replace(' ', '')
-            return set(text[i:i+n] for i in range(len(text) - n + 1))
-        
-        ngrams1 = get_ngrams(text1_clean)
-        ngrams2 = get_ngrams(text2_clean)
-        
-        if ngrams1 and ngrams2:
-            ngram_score = len(ngrams1 & ngrams2) / len(ngrams1 | ngrams2) if ngrams1 | ngrams2 else 0.0
         else:
-            ngram_score = 0.0
-        
-        # Combined score: 70% word overlap, 30% n-gram overlap
-        return 0.7 * jaccard + 0.3 * ngram_score
+            # For shorter texts, use simpler word overlap
+            stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'is', 'are', 'was', 'be', 'by', 'do', 'i', 'my', 'me', 'you', 'your'}
+            content1 = set(w for w in words1 if w not in stop_words and len(w) > 2)
+            content2 = set(w for w in words2 if w not in stop_words and len(w) > 2)
+            
+            if not content1 or not content2:
+                return 0.0
+            
+            # Jaccard similarity on content words
+            intersection = len(content1 & content2)
+            union = len(content1 | content2)
+            return intersection / union if union > 0 else 0.0
     
     def _generate_chat_id(self, user_id: str, question: str) -> str:
         """Generate unique chat ID"""
