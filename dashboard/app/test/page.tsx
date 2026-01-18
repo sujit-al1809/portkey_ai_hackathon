@@ -30,6 +30,8 @@ interface AnalysisResult {
   message?: string
   cached_from?: string
   is_cached?: boolean
+  original_question?: string
+  quality_score?: number
 }
 
 interface HistoryChat {
@@ -355,11 +357,17 @@ export default function TestPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-2 text-sm">
-                <p><strong>Original Question:</strong> {result.original_question}</p>
+                {result.original_question && (
+                  <p><strong>Original Question:</strong> {result.original_question}</p>
+                )}
                 <p><strong>Model Used:</strong> {result.recommended_model}</p>
-                <p><strong>Quality Score:</strong> {(result.quality_score * 100).toFixed(0)}%</p>
+                {result.quality_score && (
+                  <p><strong>Quality Score:</strong> {(result.quality_score * 100).toFixed(0)}%</p>
+                )}
                 <p><strong>Cost Saved:</strong> $0.00 (cached)</p>
-                <p><strong>Retrieved From:</strong> {result.cached_from}</p>
+                {result.cached_from && (
+                  <p><strong>Retrieved From:</strong> {result.cached_from}</p>
+                )}
               </div>
             </CardContent>
           </Card>
